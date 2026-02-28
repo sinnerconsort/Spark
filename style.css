@@ -1,0 +1,231 @@
+/* ═══════════════════════════════════════
+   SPARK — Scenario Hook Generator
+   ═══════════════════════════════════════ */
+
+/* ─── FAB Button ─── */
+.spark-fab {
+    position: fixed;
+    bottom: 80px;
+    right: 20px;
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    border: 1px solid var(--SmartThemeBorderColor, #555);
+    background: var(--SmartThemeBlurTintColor, #1a1a2e);
+    color: var(--SmartThemeBodyColor, #ccc);
+    font-size: 18px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    z-index: 9990;
+    box-shadow: 0 2px 12px rgba(0, 0, 0, 0.4);
+    transition: transform 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
+}
+
+.spark-fab:hover {
+    transform: scale(1.1);
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
+    background: var(--SmartThemeBorderColor, #444);
+}
+
+.spark-fab:active {
+    transform: scale(0.95);
+}
+
+.spark-fab .fa-bolt {
+    color: #f0c040;
+    filter: drop-shadow(0 0 3px rgba(240, 192, 64, 0.4));
+}
+
+/* ─── Panel ─── */
+.spark-panel {
+    position: fixed;
+    bottom: 130px;
+    right: 20px;
+    width: 340px;
+    max-height: 70vh;
+    background: var(--SmartThemeBlurTintColor, #1a1a2e);
+    border: 1px solid var(--SmartThemeBorderColor, #555);
+    border-radius: 12px;
+    z-index: 9991;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+/* ─── Header ─── */
+.spark-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--SmartThemeBorderColor, #444);
+    background: rgba(0, 0, 0, 0.15);
+    flex-shrink: 0;
+}
+
+.spark-title-row {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    min-width: 0;
+}
+
+.spark-title {
+    font-weight: 600;
+    font-size: 14px;
+    color: var(--SmartThemeBodyColor, #ddd);
+    white-space: nowrap;
+}
+
+.spark-subtitle {
+    font-size: 11px;
+    color: var(--SmartThemeQuoteColor, #888);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    font-style: italic;
+}
+
+.spark-header-actions {
+    display: flex;
+    gap: 4px;
+    flex-shrink: 0;
+}
+
+.spark-header-actions .menu_button_icon {
+    width: 28px;
+    height: 28px;
+    font-size: 12px;
+}
+
+/* ─── Suggestions Container ─── */
+.spark-suggestions {
+    padding: 10px;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    flex: 1;
+    min-height: 80px;
+}
+
+/* ─── Individual Suggestion Card ─── */
+.spark-card {
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 8px;
+    padding: 10px 12px;
+    transition: border-color 0.15s ease, background 0.15s ease;
+    position: relative;
+}
+
+.spark-card:hover {
+    border-color: rgba(240, 192, 64, 0.3);
+    background: rgba(255, 255, 255, 0.06);
+}
+
+.spark-card-text {
+    font-size: 13px;
+    line-height: 1.5;
+    color: var(--SmartThemeBodyColor, #ccc);
+    margin-bottom: 6px;
+}
+
+.spark-card-actions {
+    display: flex;
+    gap: 4px;
+    justify-content: flex-end;
+    opacity: 0.5;
+    transition: opacity 0.15s ease;
+}
+
+.spark-card:hover .spark-card-actions {
+    opacity: 1;
+}
+
+.spark-card-actions .menu_button_icon {
+    width: 26px;
+    height: 26px;
+    font-size: 11px;
+}
+
+/* ─── Status Messages ─── */
+.spark-status {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 24px 16px;
+    color: var(--SmartThemeQuoteColor, #888);
+    font-size: 13px;
+    text-align: center;
+}
+
+.spark-status .fa-bolt {
+    color: #f0c040;
+    opacity: 0.6;
+}
+
+.spark-status .fa-spinner {
+    color: #f0c040;
+}
+
+.spark-error {
+    color: var(--SmartThemeQuoteColor, #aa6666);
+}
+
+.spark-error .fa-triangle-exclamation {
+    color: #cc6644;
+}
+
+/* ─── Settings Panel ─── */
+.spark-settings-group {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    margin-top: 4px;
+}
+
+.spark-settings-group small b {
+    margin-bottom: 2px;
+}
+
+/* ─── Scrollbar ─── */
+.spark-suggestions::-webkit-scrollbar {
+    width: 4px;
+}
+
+.spark-suggestions::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.spark-suggestions::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 4px;
+}
+
+.spark-suggestions::-webkit-scrollbar-thumb:hover {
+    background: rgba(255, 255, 255, 0.2);
+}
+
+/* ─── Mobile Adjustments ─── */
+@media (max-width: 1000px) {
+    .spark-panel {
+        right: 10px;
+        left: 10px;
+        bottom: 120px;
+        width: auto;
+        max-height: 60vh;
+    }
+
+    .spark-fab {
+        bottom: 70px;
+        right: 14px;
+        width: 40px;
+        height: 40px;
+        font-size: 16px;
+    }
+}
