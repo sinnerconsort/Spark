@@ -366,7 +366,10 @@ function createPanel() {
 }
 
 function createFAB() {
-    if ($('#spark-fab').length) return;
+    if ($('#spark-fab').length) {
+        toastr.info('FAB already exists', 'Spark Debug');
+        return;
+    }
 
     const fabHtml = `
         <button id="spark-fab" class="spark-fab" title="Spark — Scenario Ideas">
@@ -374,8 +377,23 @@ function createFAB() {
         </button>
     `;
 
-    $('body').append(fabHtml);
-    $('#spark-fab').on('click', () => togglePanel());
+    // Try appending to #form_sheld first (ST's chat area), fall back to body
+    const target = $('#form_sheld');
+    if (target.length) {
+        target.append(fabHtml);
+        toastr.info('FAB appended to #form_sheld', 'Spark Debug');
+    } else {
+        $('body').append(fabHtml);
+        toastr.info('FAB appended to body', 'Spark Debug');
+    }
+
+    const fab = $('#spark-fab');
+    if (fab.length) {
+        fab.on('click', () => togglePanel());
+        toastr.success(`FAB found in DOM, display: ${fab.css('display')}, visibility: ${fab.css('visibility')}`, 'Spark Debug');
+    } else {
+        toastr.error('FAB NOT found in DOM after append!', 'Spark Debug');
+    }
 }
 
 function togglePanel(forceState) {
@@ -515,9 +533,12 @@ jQuery(async () => {
         addSettingsPanel();
 
         if (extensionSettings.enabled) {
+            toastr.info('Extension enabled, creating UI...', 'Spark Debug');
             createFAB();
             createPanel();
             registerEvents();
+        } else {
+            toastr.warning('Extension is DISABLED at init', 'Spark Debug');
         }
 
         console.log('[Spark] ⚡ Ready');
