@@ -368,20 +368,41 @@ function createPanel() {
 function createFAB() {
     if ($('#spark-fab').length) return;
 
-    const fabHtml = `
-        <button id="spark-fab" class="spark-fab" title="Spark — Scenario Ideas">
-            <i class="fa-solid fa-bolt"></i>
-        </button>
-    `;
+    // Clear any stale position data
+    try { localStorage.removeItem('spark-fab-pos'); } catch(e) {}
 
-    $('body').append(fabHtml);
+    const fab = $('<button>', {
+        id: 'spark-fab',
+        title: 'Spark — Scenario Ideas',
+        html: '<i class="fa-solid fa-bolt" style="color:#f0c040;pointer-events:none;"></i>'
+    }).css({
+        position: 'fixed',
+        bottom: '75px',
+        right: '15px',
+        width: '44px',
+        height: '44px',
+        borderRadius: '50%',
+        border: '1px solid var(--SmartThemeBorderColor, #555)',
+        background: 'var(--SmartThemeBlurTintColor, #1a1a2e)',
+        color: '#ccc',
+        fontSize: '18px',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        cursor: 'pointer',
+        zIndex: '31000',
+        boxShadow: '0 2px 12px rgba(0,0,0,0.4)',
+        padding: '0',
+        margin: '0',
+        pointerEvents: 'auto'
+    });
 
-    const fab = $('#spark-fab');
+    $('body').append(fab);
+
     let isDragging = false;
     let wasDragged = false;
     let startX, startY, startRight, startBottom;
 
-    // Click handler — only fires if we didn't just drag
     fab.on('click', (e) => {
         if (wasDragged) {
             wasDragged = false;
@@ -392,7 +413,6 @@ function createFAB() {
         togglePanel();
     });
 
-    // Touch drag
     fab[0].addEventListener('touchstart', (e) => {
         isDragging = true;
         wasDragged = false;
@@ -409,8 +429,6 @@ function createFAB() {
         const touch = e.touches[0];
         const dx = touch.clientX - startX;
         const dy = touch.clientY - startY;
-
-        // Only count as drag if moved more than 8px
         if (Math.abs(dx) > 8 || Math.abs(dy) > 8) {
             wasDragged = true;
             e.preventDefault();
@@ -422,22 +440,21 @@ function createFAB() {
 
     fab[0].addEventListener('touchend', () => {
         isDragging = false;
-        // Save position
         try {
             localStorage.setItem('spark-fab-pos', JSON.stringify({
                 right: parseInt(fab.css('right')),
                 bottom: parseInt(fab.css('bottom'))
             }));
-        } catch (e) { /* ignore */ }
+        } catch (e) {}
     }, { passive: true });
 
-    // Restore saved position
-    try {
-        const saved = JSON.parse(localStorage.getItem('spark-fab-pos'));
-        if (saved) {
-            fab.css({ right: saved.right + 'px', bottom: saved.bottom + 'px' });
+    // Watchdog: re-create if something removes the FAB
+    setInterval(() => {
+        if (extensionSettings.enabled && !$('#spark-fab').length) {
+            console.log('[Spark] FAB was removed, re-creating...');
+            createFAB();
         }
-    } catch (e) { /* ignore */ }
+    }, 3000);
 }
 
 function togglePanel(forceState) {
