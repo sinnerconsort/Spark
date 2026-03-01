@@ -1,6 +1,7 @@
 /**
- * Spark — Scenario Hook Generator
- * Reads the character card + user persona, generates quick scenario premises.
+ * Spark — Scenario Hook & First Message Generator
+ * Reads the character card + user persona, generates scenario hooks
+ * that can be expanded into full first messages with POV control.
  * Works before/outside of active chats.
  */
 import {
@@ -28,7 +29,9 @@ const defaultSettings = {
     include_scenario: true,
     include_personality: true,
     include_persona: true,
-    include_examples: false
+    include_examples: false,
+    pov: 'second',
+    first_msg_length: 3
 };
 
 let extensionSettings = { ...defaultSettings };
@@ -45,7 +48,6 @@ function loadSettings() {
         context.extensionSettings[extensionName] = { ...defaultSettings };
     }
     extensionSettings = context.extensionSettings[extensionName];
-    // Backfill any missing keys
     for (const [key, val] of Object.entries(defaultSettings)) {
         if (extensionSettings[key] === undefined) extensionSettings[key] = val;
     }
@@ -82,14 +84,12 @@ function getPersonaData() {
     const context = getContext();
     let description = '';
 
-    // Try multiple sources for persona description
     try {
         if (power_user?.persona_description) {
             description = power_user.persona_description;
         }
-    } catch (e) { /* power_user not available */ }
+    } catch (e) {}
 
-    // Fallback: try DOM
     if (!description) {
         const el = document.querySelector('#persona_description');
         if (el) description = el.value || el.textContent || '';
@@ -101,13 +101,7 @@ function getPersonaData() {
     };
 }
 
-// ═══════════════════════════════════════
-//  PROMPT BUILDING
-// ═══════════════════════════════════════
-
-function buildPrompt(charData, personaData) {
-    const count = extensionSettings.count || 4;
-
+function buildCharBlock(charData) {
     let charBlock = `Name: ${charData.name}`;
     if (extensionSettings.include_description && charData.description) {
         charBlock += `\nDescription: ${charData.description}`;
@@ -121,11 +115,23 @@ function buildPrompt(charData, personaData) {
     if (extensionSettings.include_examples && charData.mes_example) {
         charBlock += `\nExample dialogue:\n${charData.mes_example}`;
     }
+    return charBlock;
+}
 
+function buildPersonaBlock(personaData) {
     let personaBlock = `Name: ${personaData.name}`;
     if (extensionSettings.include_persona && personaData.description) {
         personaBlock += `\nDescription: ${personaData.description}`;
     }
+    return personaBlock;
+}
+
+// ═══════════════════════════════════════
+//  PROMPT BUILDING — HOOKS
+// ═══════════════════════════════════════
+
+function buildHookPrompt(charData, personaData) {
+    const count = extensionSettings.count || 4;
 
     return `You are a creative scenario generator for roleplay. Given a character and a user persona, generate exactly ${count} unique scenario hooks — brief, evocative premises for scenes between them.
 
@@ -137,16 +143,56 @@ Each scenario should:
 - Be self-contained enough to start a conversation from
 
 CHARACTER:
-${charBlock}
+${buildCharBlock(charData)}
 
 USER PERSONA:
-${personaBlock}
+${buildPersonaBlock(personaData)}
 
 Generate exactly ${count} scenario hooks. Format each on its own line, prefixed with a number and period (e.g. "1. ..."). Output ONLY the numbered list, nothing else.`;
 }
 
 // ═══════════════════════════════════════
-//  GENERATION
+//  PROMPT BUILDING — FIRST MESSAGE
+// ═══════════════════════════════════════
+
+function getPovInstruction() {
+    const pov = extensionSettings.pov || 'second';
+    const labels = {
+        first: 'first person (I/me/my)',
+        second: 'second person (you/your)',
+        third: 'third person (he/she/they)'
+    };
+    return labels[pov] || labels.second;
+}
+
+function buildFirstMessagePrompt(hook, charData, personaData) {
+    const paragraphs = extensionSettings.first_msg_length || 3;
+    const povLabel = getPovInstruction();
+
+    return `You are a skilled roleplay narrator writing the opening message for a scene. You are writing AS the character, not the user.
+
+CRITICAL RULES:
+- Write ONLY as ${charData.name}. You are narrating from the character's perspective and actions.
+- NEVER write actions, dialogue, thoughts, or decisions for ${personaData.name} (the user's character).
+- NEVER assume how ${personaData.name} feels, reacts, or responds.
+- ${personaData.name}'s actions and words are controlled exclusively by the user.
+- You may reference ${personaData.name}'s presence or describe the environment around them, but do not dictate their behavior.
+- Use ${povLabel} perspective when referencing ${personaData.name} in the scene.
+
+CHARACTER:
+${buildCharBlock(charData)}
+
+USER PERSONA:
+${buildPersonaBlock(personaData)}
+
+SCENARIO TO EXPAND:
+${hook}
+
+Write an opening message of approximately ${paragraphs} paragraph${paragraphs > 1 ? 's' : ''}. Set the scene, establish the mood, and write ${charData.name}'s initial actions/dialogue. End in a way that invites ${personaData.name} to respond. Output ONLY the first message, no preamble or meta-commentary.`;
+}
+
+// ═══════════════════════════════════════
+//  GENERATION — HOOKS
 // ═══════════════════════════════════════
 
 async function generateSuggestions() {
@@ -159,21 +205,19 @@ async function generateSuggestions() {
     }
 
     const personaData = getPersonaData();
-    const prompt = buildPrompt(charData, personaData);
+    const prompt = buildHookPrompt(charData, personaData);
 
     isGenerating = true;
-    showLoadingState();
+    showLoadingState('Generating scenarios...');
 
     try {
-        if (DEBUG) toastr.info('Generating scenarios...', 'Spark');
-
         const response = await generateRaw(prompt, null, false, false);
 
         if (!response || typeof response !== 'string') {
             throw new Error('Empty response from API');
         }
 
-        const suggestions = parseResponse(response);
+        const suggestions = parseHookResponse(response);
 
         if (suggestions.length === 0) {
             throw new Error('Could not parse any suggestions');
@@ -185,7 +229,95 @@ async function generateSuggestions() {
     } catch (err) {
         console.error('[Spark] Generation failed:', err);
         showErrorState(err.message || 'Generation failed');
-        if (DEBUG) toastr.error(err.message, 'Spark Error');
+    } finally {
+        isGenerating = false;
+    }
+}
+
+// ═══════════════════════════════════════
+//  GENERATION — FIRST MESSAGE
+// ═══════════════════════════════════════
+
+async function expandToFirstMessage(hookText, cardElement) {
+    if (isGenerating) return;
+
+    const charData = getCharacterData();
+    if (!charData) return;
+    const personaData = getPersonaData();
+
+    const prompt = buildFirstMessagePrompt(hookText, charData, personaData);
+
+    isGenerating = true;
+
+    const expandArea = cardElement.find('.spark-expand-area');
+    expandArea.html(`
+        <div class="spark-status spark-expand-loading">
+            <i class="fa-solid fa-spinner fa-spin"></i>
+            <span>Writing first message...</span>
+        </div>
+    `).slideDown(150);
+
+    cardElement.find('.spark-expand').prop('disabled', true).css('opacity', '0.4');
+
+    try {
+        const response = await generateRaw(prompt, null, false, false);
+
+        if (!response || typeof response !== 'string') {
+            throw new Error('Empty response from API');
+        }
+
+        const cleaned = response.trim();
+
+        expandArea.html(`
+            <div class="spark-first-message">
+                <div class="spark-first-message-text">${escapeHtml(cleaned).replace(/\n/g, '<br>')}</div>
+                <div class="spark-first-message-actions">
+                    <button class="spark-fm-copy menu_button menu_button_icon" title="Copy to clipboard">
+                        <i class="fa-solid fa-copy"></i> Copy
+                    </button>
+                    <button class="spark-fm-paste menu_button menu_button_icon" title="Paste into chat input">
+                        <i class="fa-solid fa-paste"></i> Paste
+                    </button>
+                    <button class="spark-fm-regen menu_button menu_button_icon" title="Regenerate">
+                        <i class="fa-solid fa-rotate"></i>
+                    </button>
+                    <button class="spark-fm-close menu_button menu_button_icon" title="Collapse">
+                        <i class="fa-solid fa-chevron-up"></i>
+                    </button>
+                </div>
+            </div>
+        `);
+
+        expandArea.find('.spark-fm-copy').on('click', (e) => {
+            e.stopPropagation();
+            copyToClipboard(cleaned);
+        });
+
+        expandArea.find('.spark-fm-paste').on('click', (e) => {
+            e.stopPropagation();
+            pasteToInput(cleaned);
+        });
+
+        expandArea.find('.spark-fm-regen').on('click', (e) => {
+            e.stopPropagation();
+            expandToFirstMessage(hookText, cardElement);
+        });
+
+        expandArea.find('.spark-fm-close').on('click', (e) => {
+            e.stopPropagation();
+            expandArea.slideUp(150);
+            cardElement.find('.spark-expand').prop('disabled', false).css('opacity', '1');
+        });
+
+    } catch (err) {
+        console.error('[Spark] First message generation failed:', err);
+        expandArea.html(`
+            <div class="spark-status spark-error">
+                <i class="fa-solid fa-triangle-exclamation"></i>
+                <span>${escapeHtml(err.message || 'Generation failed')}</span>
+            </div>
+        `);
+        cardElement.find('.spark-expand').prop('disabled', false).css('opacity', '1');
     } finally {
         isGenerating = false;
     }
@@ -195,9 +327,8 @@ async function generateSuggestions() {
 //  PARSING
 // ═══════════════════════════════════════
 
-function parseResponse(text) {
+function parseHookResponse(text) {
     const suggestions = [];
-    // Match numbered lines: "1. text", "2. text", etc.
     const lines = text.split('\n');
 
     for (const line of lines) {
@@ -207,7 +338,6 @@ function parseResponse(text) {
         }
     }
 
-    // Fallback: if no numbered lines found, split by double newlines
     if (suggestions.length === 0) {
         const blocks = text.split(/\n{2,}/).map(b => b.trim()).filter(b => b.length > 10);
         suggestions.push(...blocks);
@@ -229,15 +359,24 @@ function renderSuggestions(suggestions, charName) {
             <div class="spark-card" data-index="${i}">
                 <div class="spark-card-text">${escapeHtml(text)}</div>
                 <div class="spark-card-actions">
-                    <button class="spark-copy menu_button menu_button_icon" title="Copy to clipboard">
+                    <button class="spark-expand menu_button menu_button_icon" title="Expand to first message">
+                        <i class="fa-solid fa-wand-magic-sparkles"></i>
+                    </button>
+                    <button class="spark-copy menu_button menu_button_icon" title="Copy hook">
                         <i class="fa-solid fa-copy"></i>
                     </button>
-                    <button class="spark-paste menu_button menu_button_icon" title="Paste into chat input">
+                    <button class="spark-paste menu_button menu_button_icon" title="Paste hook">
                         <i class="fa-solid fa-paste"></i>
                     </button>
                 </div>
+                <div class="spark-expand-area" style="display: none;"></div>
             </div>
         `);
+
+        card.find('.spark-expand').on('click', function (e) {
+            e.stopPropagation();
+            expandToFirstMessage(text, card);
+        });
 
         card.find('.spark-copy').on('click', function (e) {
             e.stopPropagation();
@@ -252,16 +391,15 @@ function renderSuggestions(suggestions, charName) {
         container.append(card);
     });
 
-    // Update header subtitle
     $('#spark-subtitle').text(`for ${charName}`);
 }
 
-function showLoadingState() {
+function showLoadingState(message) {
     const container = $('#spark-suggestions');
     container.html(`
         <div class="spark-status">
             <i class="fa-solid fa-spinner fa-spin"></i>
-            <span>Generating scenarios...</span>
+            <span>${escapeHtml(message || 'Generating...')}</span>
         </div>
     `);
     $('#spark-subtitle').text('thinking...');
@@ -297,7 +435,6 @@ function copyToClipboard(text) {
     navigator.clipboard.writeText(text).then(() => {
         toastr.success('Copied!', 'Spark', { timeOut: 1500 });
     }).catch(() => {
-        // Fallback
         const ta = document.createElement('textarea');
         ta.value = text;
         document.body.appendChild(ta);
@@ -316,7 +453,6 @@ function pasteToInput(text) {
     }
     textarea.val(text);
     textarea.trigger('input');
-    // Resize
     const el = textarea[0];
     if (el) {
         el.style.height = 'auto';
@@ -341,12 +477,22 @@ function createPanel() {
                     <span id="spark-subtitle" class="spark-subtitle"></span>
                 </div>
                 <div class="spark-header-actions">
-                    <button id="spark-refresh" class="menu_button menu_button_icon" title="Generate new scenarios">
+                    <button id="spark-refresh" class="menu_button menu_button_icon" title="Generate new hooks">
                         <i class="fa-solid fa-rotate"></i>
                     </button>
                     <button id="spark-close" class="menu_button menu_button_icon" title="Close">
                         <i class="fa-solid fa-xmark"></i>
                     </button>
+                </div>
+            </div>
+            <div class="spark-pov-bar">
+                <button class="spark-pov-btn ${extensionSettings.pov === 'first' ? 'active' : ''}" data-pov="first" title="First person (I/me)">1st</button>
+                <button class="spark-pov-btn ${extensionSettings.pov === 'second' ? 'active' : ''}" data-pov="second" title="Second person (you/your)">2nd</button>
+                <button class="spark-pov-btn ${extensionSettings.pov === 'third' ? 'active' : ''}" data-pov="third" title="Third person (he/she/they)">3rd</button>
+                <div class="spark-length-control">
+                    <i class="fa-solid fa-align-left" title="First message length"></i>
+                    <input type="range" id="spark-length" min="1" max="5" value="${extensionSettings.first_msg_length}" step="1" title="Paragraphs">
+                    <span id="spark-length-val">${extensionSettings.first_msg_length}¶</span>
                 </div>
             </div>
             <div id="spark-suggestions" class="spark-suggestions">
@@ -358,7 +504,6 @@ function createPanel() {
         </div>
     `;
 
-    // Attach to same parent as FAB
     const targets = ['#form_sheld', '#sheld', '#chat', 'body'];
     for (const selector of targets) {
         const target = $(selector);
@@ -370,6 +515,20 @@ function createPanel() {
 
     $('#spark-close').on('click', () => togglePanel(false));
     $('#spark-refresh').on('click', generateSuggestions);
+
+    $('.spark-pov-btn').on('click', function () {
+        const pov = $(this).data('pov');
+        extensionSettings.pov = pov;
+        saveSettings();
+        $('.spark-pov-btn').removeClass('active');
+        $(this).addClass('active');
+    });
+
+    $('#spark-length').on('input', function () {
+        extensionSettings.first_msg_length = parseInt($(this).val());
+        $('#spark-length-val').text(extensionSettings.first_msg_length + '¶');
+        saveSettings();
+    });
 }
 
 function createFAB() {
@@ -404,16 +563,13 @@ function createFAB() {
         overflow: 'visible'
     });
 
-    // Try multiple attachment points — use whichever exists
     const targets = ['#form_sheld', '#sheld', '#chat', 'body'];
     let attached = false;
     for (const selector of targets) {
         const target = $(selector);
         if (target.length) {
             target.append(fab);
-            // Force overflow visible on parent so FAB isn't clipped
             target.css('overflow', 'visible');
-            console.log(`[Spark] FAB attached to ${selector}`);
             attached = true;
             break;
         }
@@ -421,7 +577,6 @@ function createFAB() {
 
     if (!attached) {
         $('body').append(fab);
-        console.log('[Spark] FAB fallback to body');
     }
 
     let isDragging = false;
@@ -473,10 +628,8 @@ function createFAB() {
         } catch (e) {}
     }, { passive: true });
 
-    // Watchdog
     setInterval(() => {
         if (extensionSettings.enabled && !$('#spark-fab').length) {
-            console.log('[Spark] FAB was removed, re-creating...');
             createFAB();
         }
     }, 3000);
@@ -484,16 +637,12 @@ function createFAB() {
 
 function togglePanel(forceState) {
     const panel = $('#spark-panel');
-    if (!panel.length) {
-        toastr.error('Panel not found in DOM!', 'Spark Debug');
-        return;
-    }
+    if (!panel.length) return;
 
     const isVisible = panel.is(':visible');
     const shouldShow = forceState !== undefined ? forceState : !isVisible;
 
     if (shouldShow) {
-        // Only position dynamically on desktop — mobile uses CSS media query
         if (window.innerWidth > 1000) {
             const fab = $('#spark-fab');
             if (fab.length) {
@@ -505,11 +654,9 @@ function togglePanel(forceState) {
                 });
             }
         } else {
-            // Clear any inline positioning so media query takes over
             panel.css({ right: '', left: '', bottom: '' });
         }
         panel.fadeIn(150);
-        // Auto-generate if empty and character is selected
         if (currentSuggestions.length === 0 && getCharacterData()) {
             generateSuggestions();
         }
@@ -564,7 +711,6 @@ function addSettingsPanel() {
 
     $('#extensions_settings2').append(settingsHtml);
 
-    // Wire up settings
     $('#spark-enabled').on('change', function () {
         extensionSettings.enabled = $(this).prop('checked');
         saveSettings();
@@ -604,7 +750,6 @@ function addSettingsPanel() {
 // ═══════════════════════════════════════
 
 function registerEvents() {
-    // Clear suggestions when character changes so it auto-refreshes on next open
     eventSource.on(event_types.CHAT_CHANGED, () => {
         currentSuggestions = [];
         if ($('#spark-panel').is(':visible')) {
