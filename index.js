@@ -493,15 +493,20 @@ function togglePanel(forceState) {
     const shouldShow = forceState !== undefined ? forceState : !isVisible;
 
     if (shouldShow) {
-        // Position panel above FAB
-        const fab = $('#spark-fab');
-        if (fab.length) {
-            const fabRight = parseInt(fab.css('right')) || 20;
-            const fabBottom = parseInt(fab.css('bottom')) || 80;
-            panel.css({
-                right: fabRight + 'px',
-                bottom: (fabBottom + 50) + 'px'
-            });
+        // Only position dynamically on desktop — mobile uses CSS media query
+        if (window.innerWidth > 1000) {
+            const fab = $('#spark-fab');
+            if (fab.length) {
+                const fabRight = parseInt(fab.css('right')) || 20;
+                const fabBottom = parseInt(fab.css('bottom')) || 80;
+                panel.css({
+                    right: fabRight + 'px',
+                    bottom: (fabBottom + 50) + 'px'
+                });
+            }
+        } else {
+            // Clear any inline positioning so media query takes over
+            panel.css({ right: '', left: '', bottom: '' });
         }
         panel.fadeIn(150);
         // Auto-generate if empty and character is selected

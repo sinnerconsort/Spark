@@ -215,10 +215,10 @@
 /* ─── Mobile Adjustments ─── */
 @media (max-width: 1000px) {
     .spark-panel {
-        right: 10px;
-        left: 10px;
-        bottom: 130px;
-        width: auto;
+        right: 5px !important;
+        left: 5px !important;
+        bottom: 120px !important;
+        width: auto !important;
         max-height: 55vh;
     }
 
@@ -229,4 +229,11 @@
         height: 42px;
         font-size: 16px;
     }
+}
+
+/* Ensure text always wraps */
+.spark-card-text {
+    word-wrap: break-word;
+    overflow-wrap: break-word;
+    white-space: normal;
 }
