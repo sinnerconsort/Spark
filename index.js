@@ -31,7 +31,9 @@ const defaultSettings = {
     include_persona: true,
     include_examples: false,
     pov: 'second',
-    first_msg_length: 3
+    first_msg_length: 3,
+    guide: '',
+    history: ''
 };
 
 let extensionSettings = { ...defaultSettings };
@@ -126,12 +128,27 @@ function buildPersonaBlock(personaData) {
     return personaBlock;
 }
 
+function buildCustomContext() {
+    // Read live from DOM so unsaved edits are captured
+    const guide = ($('#spark-guide-input').val() || extensionSettings.guide || '').trim();
+    const history = ($('#spark-history-input').val() || extensionSettings.history || '').trim();
+    let block = '';
+    if (history) {
+        block += `\nHISTORY BETWEEN THESE CHARACTERS:\n${history.substring(0, 3000)}\n`;
+    }
+    if (guide) {
+        block += `\nUSER DIRECTION:\nThe user wants scenarios that focus on or involve the following: ${guide.substring(0, 1500)}\nWeight your suggestions toward this guidance.\n`;
+    }
+    return block;
+}
+
 // ═══════════════════════════════════════
 //  PROMPT BUILDING — HOOKS
 // ═══════════════════════════════════════
 
 function buildHookPrompt(charData, personaData) {
     const count = extensionSettings.count || 4;
+    const customContext = buildCustomContext();
 
     return `You are a creative scenario generator for roleplay. Given a character and a user persona, generate exactly ${count} unique scenario hooks — brief, evocative premises for scenes between them.
 
@@ -147,7 +164,7 @@ ${buildCharBlock(charData)}
 
 USER PERSONA:
 ${buildPersonaBlock(personaData)}
-
+${customContext}
 Generate exactly ${count} scenario hooks. Format each on its own line, prefixed with a number and period (e.g. "1. ..."). Output ONLY the numbered list, nothing else.`;
 }
 
@@ -168,6 +185,7 @@ function getPovInstruction() {
 function buildFirstMessagePrompt(hook, charData, personaData) {
     const paragraphs = extensionSettings.first_msg_length || 3;
     const povLabel = getPovInstruction();
+    const customContext = buildCustomContext();
 
     return `You are a skilled roleplay narrator writing the opening message for a scene. You are writing AS the character, not the user.
 
@@ -184,7 +202,7 @@ ${buildCharBlock(charData)}
 
 USER PERSONA:
 ${buildPersonaBlock(personaData)}
-
+${customContext}
 SCENARIO TO EXPAND:
 ${hook}
 
@@ -495,6 +513,24 @@ function createPanel() {
                     <span id="spark-length-val">${extensionSettings.first_msg_length}¶</span>
                 </div>
             </div>
+            <div class="spark-custom-fields">
+                <div class="spark-field-toggle" id="spark-toggle-guide">
+                    <i class="fa-solid fa-compass"></i>
+                    <span>Guide</span>
+                    <i class="fa-solid fa-chevron-down spark-chevron"></i>
+                </div>
+                <div class="spark-field-body" id="spark-guide-body" style="display: none;">
+                    <textarea id="spark-guide-input" class="spark-textarea" placeholder="Steer generation toward a specific theme, mood, or scenario type..." rows="2">${escapeHtml(extensionSettings.guide || '')}</textarea>
+                </div>
+                <div class="spark-field-toggle" id="spark-toggle-history">
+                    <i class="fa-solid fa-clock-rotate-left"></i>
+                    <span>History</span>
+                    <i class="fa-solid fa-chevron-down spark-chevron"></i>
+                </div>
+                <div class="spark-field-body" id="spark-history-body" style="display: none;">
+                    <textarea id="spark-history-input" class="spark-textarea" placeholder="What happened before? Backstory, last session, relationship context..." rows="3">${escapeHtml(extensionSettings.history || '')}</textarea>
+                </div>
+            </div>
             <div id="spark-suggestions" class="spark-suggestions">
                 <div class="spark-status">
                     <i class="fa-solid fa-bolt"></i>
@@ -527,6 +563,28 @@ function createPanel() {
     $('#spark-length').on('input', function () {
         extensionSettings.first_msg_length = parseInt($(this).val());
         $('#spark-length-val').text(extensionSettings.first_msg_length + '¶');
+        saveSettings();
+    });
+
+    // Guide/History collapsible toggles
+    $('#spark-toggle-guide').on('click', function () {
+        $('#spark-guide-body').slideToggle(150);
+        $(this).find('.spark-chevron').toggleClass('spark-chevron-open');
+    });
+
+    $('#spark-toggle-history').on('click', function () {
+        $('#spark-history-body').slideToggle(150);
+        $(this).find('.spark-chevron').toggleClass('spark-chevron-open');
+    });
+
+    // Save on blur so we don't spam saves while typing
+    $('#spark-guide-input').on('blur', function () {
+        extensionSettings.guide = $(this).val();
+        saveSettings();
+    });
+
+    $('#spark-history-input').on('blur', function () {
+        extensionSettings.history = $(this).val();
         saveSettings();
     });
 }
