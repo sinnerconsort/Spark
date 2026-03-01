@@ -358,9 +358,16 @@ function createPanel() {
         </div>
     `;
 
-    $('body').append(panelHtml);
+    // Attach to same parent as FAB
+    const targets = ['#form_sheld', '#sheld', '#chat', 'body'];
+    for (const selector of targets) {
+        const target = $(selector);
+        if (target.length) {
+            target.append(panelHtml);
+            break;
+        }
+    }
 
-    // Event handlers
     $('#spark-close').on('click', () => togglePanel(false));
     $('#spark-refresh').on('click', generateSuggestions);
 }
@@ -368,7 +375,6 @@ function createPanel() {
 function createFAB() {
     if ($('#spark-fab').length) return;
 
-    // Clear any stale position data
     try { localStorage.removeItem('spark-fab-pos'); } catch(e) {}
 
     const fab = $('<button>', {
@@ -394,10 +400,29 @@ function createFAB() {
         boxShadow: '0 2px 12px rgba(0,0,0,0.4)',
         padding: '0',
         margin: '0',
-        pointerEvents: 'auto'
+        pointerEvents: 'auto',
+        overflow: 'visible'
     });
 
-    $('body').append(fab);
+    // Try multiple attachment points — use whichever exists
+    const targets = ['#form_sheld', '#sheld', '#chat', 'body'];
+    let attached = false;
+    for (const selector of targets) {
+        const target = $(selector);
+        if (target.length) {
+            target.append(fab);
+            // Force overflow visible on parent so FAB isn't clipped
+            target.css('overflow', 'visible');
+            console.log(`[Spark] FAB attached to ${selector}`);
+            attached = true;
+            break;
+        }
+    }
+
+    if (!attached) {
+        $('body').append(fab);
+        console.log('[Spark] FAB fallback to body');
+    }
 
     let isDragging = false;
     let wasDragged = false;
@@ -448,7 +473,7 @@ function createFAB() {
         } catch (e) {}
     }, { passive: true });
 
-    // Watchdog: re-create if something removes the FAB
+    // Watchdog
     setInterval(() => {
         if (extensionSettings.enabled && !$('#spark-fab').length) {
             console.log('[Spark] FAB was removed, re-creating...');
