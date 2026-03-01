@@ -53,6 +53,7 @@
     display: flex;
     flex-direction: column;
     overflow: hidden;
+    pointer-events: auto;
 }
 
 /* ─── Header ─── */
@@ -216,16 +217,16 @@
     .spark-panel {
         right: 10px;
         left: 10px;
-        bottom: 120px;
+        bottom: 130px;
         width: auto;
-        max-height: 60vh;
+        max-height: 55vh;
     }
 
     .spark-fab {
-        bottom: 70px;
-        right: 14px;
-        width: 40px;
-        height: 40px;
+        bottom: 75px;
+        right: 10px;
+        width: 42px;
+        height: 42px;
         font-size: 16px;
     }
 }

@@ -366,10 +366,7 @@ function createPanel() {
 }
 
 function createFAB() {
-    if ($('#spark-fab').length) {
-        toastr.info('FAB already exists', 'Spark Debug');
-        return;
-    }
+    if ($('#spark-fab').length) return;
 
     const fabHtml = `
         <button id="spark-fab" class="spark-fab" title="Spark — Scenario Ideas">
@@ -377,31 +374,93 @@ function createFAB() {
         </button>
     `;
 
-    // Try appending to #form_sheld first (ST's chat area), fall back to body
-    const target = $('#form_sheld');
-    if (target.length) {
-        target.append(fabHtml);
-        toastr.info('FAB appended to #form_sheld', 'Spark Debug');
-    } else {
-        $('body').append(fabHtml);
-        toastr.info('FAB appended to body', 'Spark Debug');
-    }
+    $('body').append(fabHtml);
 
     const fab = $('#spark-fab');
-    if (fab.length) {
-        fab.on('click', () => togglePanel());
-        toastr.success(`FAB found in DOM, display: ${fab.css('display')}, visibility: ${fab.css('visibility')}`, 'Spark Debug');
-    } else {
-        toastr.error('FAB NOT found in DOM after append!', 'Spark Debug');
-    }
+    let isDragging = false;
+    let wasDragged = false;
+    let startX, startY, startRight, startBottom;
+
+    // Click handler — only fires if we didn't just drag
+    fab.on('click', (e) => {
+        if (wasDragged) {
+            wasDragged = false;
+            return;
+        }
+        e.preventDefault();
+        e.stopPropagation();
+        togglePanel();
+    });
+
+    // Touch drag
+    fab[0].addEventListener('touchstart', (e) => {
+        isDragging = true;
+        wasDragged = false;
+        const touch = e.touches[0];
+        startX = touch.clientX;
+        startY = touch.clientY;
+        const rect = fab[0].getBoundingClientRect();
+        startRight = window.innerWidth - rect.right;
+        startBottom = window.innerHeight - rect.bottom;
+    }, { passive: true });
+
+    fab[0].addEventListener('touchmove', (e) => {
+        if (!isDragging) return;
+        const touch = e.touches[0];
+        const dx = touch.clientX - startX;
+        const dy = touch.clientY - startY;
+
+        // Only count as drag if moved more than 8px
+        if (Math.abs(dx) > 8 || Math.abs(dy) > 8) {
+            wasDragged = true;
+            e.preventDefault();
+            const newRight = Math.max(4, startRight - dx);
+            const newBottom = Math.max(4, startBottom - dy);
+            fab.css({ right: newRight + 'px', bottom: newBottom + 'px' });
+        }
+    }, { passive: false });
+
+    fab[0].addEventListener('touchend', () => {
+        isDragging = false;
+        // Save position
+        try {
+            localStorage.setItem('spark-fab-pos', JSON.stringify({
+                right: parseInt(fab.css('right')),
+                bottom: parseInt(fab.css('bottom'))
+            }));
+        } catch (e) { /* ignore */ }
+    }, { passive: true });
+
+    // Restore saved position
+    try {
+        const saved = JSON.parse(localStorage.getItem('spark-fab-pos'));
+        if (saved) {
+            fab.css({ right: saved.right + 'px', bottom: saved.bottom + 'px' });
+        }
+    } catch (e) { /* ignore */ }
 }
 
 function togglePanel(forceState) {
     const panel = $('#spark-panel');
+    if (!panel.length) {
+        toastr.error('Panel not found in DOM!', 'Spark Debug');
+        return;
+    }
+
     const isVisible = panel.is(':visible');
     const shouldShow = forceState !== undefined ? forceState : !isVisible;
 
     if (shouldShow) {
+        // Position panel above FAB
+        const fab = $('#spark-fab');
+        if (fab.length) {
+            const fabRight = parseInt(fab.css('right')) || 20;
+            const fabBottom = parseInt(fab.css('bottom')) || 80;
+            panel.css({
+                right: fabRight + 'px',
+                bottom: (fabBottom + 50) + 'px'
+            });
+        }
         panel.fadeIn(150);
         // Auto-generate if empty and character is selected
         if (currentSuggestions.length === 0 && getCharacterData()) {
@@ -533,12 +592,9 @@ jQuery(async () => {
         addSettingsPanel();
 
         if (extensionSettings.enabled) {
-            toastr.info('Extension enabled, creating UI...', 'Spark Debug');
             createFAB();
             createPanel();
             registerEvents();
-        } else {
-            toastr.warning('Extension is DISABLED at init', 'Spark Debug');
         }
 
         console.log('[Spark] ⚡ Ready');
