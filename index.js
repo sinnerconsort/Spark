@@ -30,6 +30,7 @@ const defaultSettings = {
     include_personality: true,
     include_persona: true,
     include_examples: false,
+    use_lexicon_lore: true,
     pov: 'second',
     first_msg_length: 3,
     guide: '',
@@ -143,12 +144,62 @@ function buildCustomContext() {
 }
 
 // ═══════════════════════════════════════
+//  LEXICON INTEGRATION
+// ═══════════════════════════════════════
+
+/**
+ * Get lore context from Lexicon if available and enabled.
+ * Returns formatted block for hook prompts (background + atmospheric hints).
+ */
+async function getLexiconLoreBlock() {
+    if (!extensionSettings.use_lexicon_lore) return '';
+    if (!window.LexiconAPI?.isActive?.()) return '';
+
+    try {
+        const block = await window.LexiconAPI.getLoreContextBlock(8);
+        if (!block?.trim()) return '';
+        return `\nWORLD LORE & ATMOSPHERE (use this to ground scenarios in the established world):\n${block}\n`;
+    } catch (e) {
+        console.warn('[Spark] Lexicon lore fetch failed:', e);
+        return '';
+    }
+}
+
+/**
+ * Get hintable entries from Lexicon for first messages that plant early seeds.
+ * Returns a prompt block instructing the AI to weave atmospheric hints.
+ */
+async function getLexiconSeedBlock() {
+    if (!extensionSettings.use_lexicon_lore) return '';
+    if (!window.LexiconAPI?.isActive?.()) return '';
+
+    try {
+        const hints = await window.LexiconAPI.getHintableEntries();
+        if (!hints?.length) return '';
+
+        // Pick up to 3 hintable entries to seed into the first message
+        const selected = hints.slice(0, 3);
+        const seedLines = selected.map(h =>
+            h.hintText
+                ? `- ${h.title}: ${h.hintText}`
+                : `- Something about "${h.title}" lingers in the atmosphere...`
+        ).join('\n');
+
+        return `\nNARRATIVE SEEDS (weave 1-2 of these atmospheric details naturally into the scene — hint, don't explain):\n${seedLines}\n`;
+    } catch (e) {
+        console.warn('[Spark] Lexicon seed fetch failed:', e);
+        return '';
+    }
+}
+
+// ═══════════════════════════════════════
 //  PROMPT BUILDING — HOOKS
 // ═══════════════════════════════════════
 
-function buildHookPrompt(charData, personaData) {
+async function buildHookPrompt(charData, personaData) {
     const count = extensionSettings.count || 4;
     const customContext = buildCustomContext();
+    const loreBlock = await getLexiconLoreBlock();
 
     return `You are a creative scenario generator for roleplay. Given a character and a user persona, generate exactly ${count} unique scenario hooks — brief, evocative premises for scenes between them.
 
@@ -158,14 +209,14 @@ Each scenario should:
 - Feel like a natural intersection of these two characters
 - Vary in tone across the set (dramatic, casual, mysterious, tense, playful, etc.)
 - Be self-contained enough to start a conversation from
+${loreBlock ? '- Draw on the world lore provided — reference locations, factions, or atmospheric details where natural\n- For atmospheric/hint entries, reference them obliquely without explaining them' : ''}
 
 CHARACTER:
 ${buildCharBlock(charData)}
 
 USER PERSONA:
 ${buildPersonaBlock(personaData)}
-${customContext}
-Generate exactly ${count} scenario hooks. Format each on its own line, prefixed with a number and period (e.g. "1. ..."). Output ONLY the numbered list, nothing else.`;
+${customContext}${loreBlock}Generate exactly ${count} scenario hooks. Format each on its own line, prefixed with a number and period (e.g. "1. ..."). Output ONLY the numbered list, nothing else.`;
 }
 
 // ═══════════════════════════════════════
@@ -182,10 +233,12 @@ function getPovInstruction() {
     return labels[pov] || labels.second;
 }
 
-function buildFirstMessagePrompt(hook, charData, personaData) {
+async function buildFirstMessagePrompt(hook, charData, personaData) {
     const paragraphs = extensionSettings.first_msg_length || 3;
     const povLabel = getPovInstruction();
     const customContext = buildCustomContext();
+    const loreBlock = await getLexiconLoreBlock();
+    const seedBlock = await getLexiconSeedBlock();
 
     return `You are a skilled roleplay narrator writing the opening message for a scene. You are writing AS the character, not the user.
 
@@ -202,7 +255,7 @@ ${buildCharBlock(charData)}
 
 USER PERSONA:
 ${buildPersonaBlock(personaData)}
-${customContext}
+${customContext}${loreBlock}${seedBlock}
 SCENARIO TO EXPAND:
 ${hook}
 
@@ -223,7 +276,7 @@ async function generateSuggestions() {
     }
 
     const personaData = getPersonaData();
-    const prompt = buildHookPrompt(charData, personaData);
+    const prompt = await buildHookPrompt(charData, personaData);
 
     isGenerating = true;
     showLoadingState('Generating scenarios...');
@@ -263,7 +316,7 @@ async function expandToFirstMessage(hookText, cardElement) {
     if (!charData) return;
     const personaData = getPersonaData();
 
-    const prompt = buildFirstMessagePrompt(hookText, charData, personaData);
+    const prompt = await buildFirstMessagePrompt(hookText, charData, personaData);
 
     isGenerating = true;
 
@@ -763,6 +816,15 @@ function addSettingsPanel() {
                         <span>User persona</span>
                     </label>
                 </div>
+                <hr>
+                <div class="spark-settings-group">
+                    <small><b>Lexicon Integration:</b></small>
+                    <label class="checkbox_label">
+                        <input type="checkbox" id="spark-use-lexicon" ${extensionSettings.use_lexicon_lore ? 'checked' : ''}>
+                        <span>Use Lexicon lore in prompts</span>
+                    </label>
+                    <small style="opacity:0.6;display:block;margin-top:2px;">When Lexicon is active, hooks draw on your world lore and first messages plant narrative seeds.</small>
+                </div>
             </div>
         </div>
     `;
@@ -801,6 +863,14 @@ function addSettingsPanel() {
             saveSettings();
         });
     }
+
+    $('#spark-use-lexicon').on('change', function () {
+        extensionSettings.use_lexicon_lore = $(this).prop('checked');
+        saveSettings();
+        if (this.checked && !window.LexiconAPI?.isActive?.()) {
+            toastr.warning('Lexicon is not active — enable it in Extensions first', 'Spark', { timeOut: 4000 });
+        }
+    });
 }
 
 // ═══════════════════════════════════════
