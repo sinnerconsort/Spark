@@ -31,6 +31,7 @@ const defaultSettings = {
     include_persona: true,
     include_examples: false,
     use_lexicon_lore: true,
+    use_codex_story: true,
     pov: 'second',
     first_msg_length: 3,
     guide: '',
@@ -193,6 +194,49 @@ async function getLexiconSeedBlock() {
 }
 
 // ═══════════════════════════════════════
+//  CODEX INTEGRATION
+// ═══════════════════════════════════════
+
+/**
+ * Get story state from Codex if available and enabled.
+ * Pulls open plot threads + established memories so scenario hooks
+ * can CONTINUE the story rather than always inventing fresh setups.
+ */
+function getCodexStoryBlock() {
+    if (!extensionSettings.use_codex_story) return '';
+    if (!window.CodexAPI?.isActive?.()) return '';
+
+    try {
+        const parts = [];
+
+        const threads = (window.CodexAPI.getActiveThreads?.() || []).slice(0, 5);
+        if (threads.length) {
+            const lines = threads.map(t => {
+                const star = t.priority === 'primary' ? '★ ' : '';
+                const desc = t.description ? `: ${t.description}` : '';
+                return `- ${star}${t.name} [${t.status}]${desc}`;
+            });
+            parts.push(`ONGOING PLOT THREADS (★ = primary, status shows momentum):\n${lines.join('\n')}`);
+        }
+
+        const priorityMap = { significant: 2, normal: 1, minor: 0 };
+        const memories = (window.CodexAPI.getMemories?.() || [])
+            .slice()
+            .sort((a, b) => (priorityMap[b.weight] ?? 1) - (priorityMap[a.weight] ?? 1))
+            .slice(0, 4);
+        if (memories.length) {
+            parts.push(`ESTABLISHED HISTORY (events that already happened):\n${memories.map(m => `- ${m.text}`).join('\n')}`);
+        }
+
+        if (!parts.length) return '';
+        return `\n${parts.join('\n')}\n`;
+    } catch (e) {
+        console.warn('[Spark] Codex story fetch failed:', e);
+        return '';
+    }
+}
+
+// ═══════════════════════════════════════
 //  PROMPT BUILDING — HOOKS
 // ═══════════════════════════════════════
 
@@ -200,6 +244,7 @@ async function buildHookPrompt(charData, personaData) {
     const count = extensionSettings.count || 4;
     const customContext = buildCustomContext();
     const loreBlock = await getLexiconLoreBlock();
+    const storyBlock = getCodexStoryBlock();
 
     return `You are a creative scenario generator for roleplay. Given a character and a user persona, generate exactly ${count} unique scenario hooks — brief, evocative premises for scenes between them.
 
@@ -209,14 +254,14 @@ Each scenario should:
 - Feel like a natural intersection of these two characters
 - Vary in tone across the set (dramatic, casual, mysterious, tense, playful, etc.)
 - Be self-contained enough to start a conversation from
-${loreBlock ? '- Draw on the world lore provided — reference locations, factions, or atmospheric details where natural\n- For atmospheric/hint entries, reference them obliquely without explaining them' : ''}
+${loreBlock ? '- Draw on the world lore provided — reference locations, factions, or atmospheric details where natural\n- For atmospheric/hint entries, reference them obliquely without explaining them' : ''}${storyBlock ? '\n- IMPORTANT: At least half the scenarios should CONTINUE the ongoing plot threads below — building threads should simmer or surface, escalating threads should gain momentum, climax threads should push toward payoff. The rest may be fresh setups that still respect the established history.\n- Never contradict the established history. Treat it as canon.' : ''}
 
 CHARACTER:
 ${buildCharBlock(charData)}
 
 USER PERSONA:
 ${buildPersonaBlock(personaData)}
-${customContext}${loreBlock}Generate exactly ${count} scenario hooks. Format each on its own line, prefixed with a number and period (e.g. "1. ..."). Output ONLY the numbered list, nothing else.`;
+${customContext}${loreBlock}${storyBlock}Generate exactly ${count} scenario hooks. Format each on its own line, prefixed with a number and period (e.g. "1. ..."). Output ONLY the numbered list, nothing else.`;
 }
 
 // ═══════════════════════════════════════
@@ -239,6 +284,7 @@ async function buildFirstMessagePrompt(hook, charData, personaData) {
     const customContext = buildCustomContext();
     const loreBlock = await getLexiconLoreBlock();
     const seedBlock = await getLexiconSeedBlock();
+    const storyBlock = getCodexStoryBlock();
 
     return `You are a skilled roleplay narrator writing the opening message for a scene. You are writing AS the character, not the user.
 
@@ -255,8 +301,7 @@ ${buildCharBlock(charData)}
 
 USER PERSONA:
 ${buildPersonaBlock(personaData)}
-${customContext}${loreBlock}${seedBlock}
-SCENARIO TO EXPAND:
+${customContext}${loreBlock}${seedBlock}${storyBlock}${storyBlock ? 'Treat the plot threads and history above as established canon — the opening may reference or build on them, but must not contradict them.\n' : ''}SCENARIO TO EXPAND:
 ${hook}
 
 Write an opening message of approximately ${paragraphs} paragraph${paragraphs > 1 ? 's' : ''}. Set the scene, establish the mood, and write ${charData.name}'s initial actions/dialogue. End in a way that invites ${personaData.name} to respond. Output ONLY the first message, no preamble or meta-commentary.`;
@@ -825,6 +870,15 @@ function addSettingsPanel() {
                     </label>
                     <small style="opacity:0.6;display:block;margin-top:2px;">When Lexicon is active, hooks draw on your world lore and first messages plant narrative seeds.</small>
                 </div>
+                <hr>
+                <div class="spark-settings-group">
+                    <small><b>Codex Integration:</b></small>
+                    <label class="checkbox_label">
+                        <input type="checkbox" id="spark-use-codex" ${extensionSettings.use_codex_story ? 'checked' : ''}>
+                        <span>Use Codex story state in prompts</span>
+                    </label>
+                    <small style="opacity:0.6;display:block;margin-top:2px;">When Codex is active, scenarios continue your open plot threads and respect established memories instead of always starting fresh.</small>
+                </div>
             </div>
         </div>
     `;
@@ -869,6 +923,14 @@ function addSettingsPanel() {
         saveSettings();
         if (this.checked && !window.LexiconAPI?.isActive?.()) {
             toastr.warning('Lexicon is not active — enable it in Extensions first', 'Spark', { timeOut: 4000 });
+        }
+    });
+
+    $('#spark-use-codex').on('change', function () {
+        extensionSettings.use_codex_story = $(this).prop('checked');
+        saveSettings();
+        if (this.checked && !window.CodexAPI?.isActive?.()) {
+            toastr.warning('Codex is not active — enable it in Extensions first', 'Spark', { timeOut: 4000 });
         }
     });
 }

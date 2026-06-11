@@ -2,10 +2,13 @@
     "display_name": "Spark",
     "loading_order": 150,
     "requires": [],
-    "optional": [],
+    "optional": [
+        "Lexicon",
+        "Codex"
+    ],
     "js": "index.js",
     "css": "style.css",
     "author": "Judas",
-    "version": "1.2.0",
+    "version": "1.3.0",
     "homePage": ""
 }
